@@ -499,6 +499,7 @@ class AppViewModel: ObservableObject {
     @Published var showLogs = false
     
     private var scanProcess: Process?
+    private var deviceCheckGeneration: UInt64 = 0
     private let scriptDir: String
     private let storageKey = "mak5er.aircard.savedCards"
     private let legacyStorageKey1 = "mak5er.savedCards"
@@ -719,6 +720,8 @@ class AppViewModel: ObservableObject {
     // MARK: - Device Connection
     
     func checkDevice() {
+        deviceCheckGeneration &+= 1
+        let generation = deviceCheckGeneration
         isCheckingDevice = true
         statusText = "Checking connected devices..."
         let scriptDir = self.scriptDir
@@ -741,6 +744,7 @@ class AppViewModel: ObservableObject {
                 
                 if let dev = try? JSONDecoder().decode(DeviceInfo.self, from: data) {
                     await MainActor.run {
+                        guard generation == self.deviceCheckGeneration else { return }
                         self.device = dev
                         self.isCheckingDevice = false
                         if dev.connected {
@@ -748,20 +752,26 @@ class AppViewModel: ObservableObject {
                             self.log("Device connected: \(dev.name ?? "iPhone") (\(dev.product ?? ""), iOS \(dev.version ?? ""))")
                             self.applyDevicePreferences(from: dev)
                         } else if dev.error == "device_helper_missing" {
+                            self.device = nil
                             self.statusText = "Device tools are missing from this build."
                             self.log("Bundled device_helper not found — detection cannot run.")
                         } else {
+                            self.device = nil
                             self.statusText = "No iPhone found. Please connect via USB."
                         }
                     }
                 } else {
                     await MainActor.run {
+                        guard generation == self.deviceCheckGeneration else { return }
+                        self.device = nil
                         self.isCheckingDevice = false
                         self.statusText = "No iPhone found. Please connect via USB."
                     }
                 }
             } catch {
                 await MainActor.run {
+                    guard generation == self.deviceCheckGeneration else { return }
+                    self.device = nil
                     self.isCheckingDevice = false
                     self.statusText = "Device detection failed: \(error.localizedDescription)"
                 }
